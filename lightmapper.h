@@ -361,6 +361,7 @@ struct lm_context
 	} hemisphere;
 
 	float interpolationThreshold;
+    unsigned int frameBuffer;
 };
 
 // pass order of one 4x4 interpolation patch for two interpolation steps (and the next neighbors right of/below it)
@@ -675,7 +676,7 @@ static void lm_integrateHemisphereBatch(lm_context *ctx)
 		ctx->hemisphere.storage.writePosition.x, ctx->hemisphere.storage.writePosition.y,
 		0, 0, ctx->hemisphere.fbHemiCountX, ctx->hemisphere.fbHemiCountY);
 	glBindTexture(GL_TEXTURE_2D, 0);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, ctx->frameBuffer);
 	glBindVertexArray(0);
 	glEnable(GL_DEPTH_TEST);
 
@@ -801,16 +802,31 @@ static lm_bool lm_beginSampleHemisphere(lm_context *ctx, int* viewport, float* v
 	if (ctx->meshPosition.hemisphere.side == 0)
 	{
 		// prepare hemisphere
-		glBindFramebuffer(GL_FRAMEBUFFER, ctx->hemisphere.fb[0]);
 		if (ctx->hemisphere.fbHemiIndex == 0)
 		{
-			// prepare hemisphere batch
-			glClearColor( // clear to valid background pixels!
-				ctx->hemisphere.clearColor.r,
-				ctx->hemisphere.clearColor.g,
-				ctx->hemisphere.clearColor.b, 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            float clearColor[] = {ctx->hemisphere.clearColor.r,
+                ctx->hemisphere.clearColor.g,
+                ctx->hemisphere.clearColor.b, 1.0f};
+            float one = 1.f;
+
+            glBindFramebuffer(GL_FRAMEBUFFER, ctx->hemisphere.fb[0]);
+			glClearBufferfv(GL_COLOR, 0, clearColor);
+            glClearBufferfv(GL_DEPTH, 0, &one);
+            glBindFramebuffer(GL_FRAMEBUFFER, ctx->hemisphere.fb[1]);
+            glClearBufferfv(GL_COLOR, 0, clearColor);
+            glClearBufferfv(GL_DEPTH, 0, &one);
+            glBindFramebuffer(GL_FRAMEBUFFER, ctx->hemisphere.fbDepth);
+            glClearBufferfv(GL_COLOR, 0, clearColor);
+            glClearBufferfv(GL_DEPTH, 0, &one);
+            /*
+            glClearColor( // clear to valid background pixels!
+                ctx->hemisphere.clearColor.r,
+                ctx->hemisphere.clearColor.g,
+                ctx->hemisphere.clearColor.b, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);*/
 		}
+
+        glBindFramebuffer(GL_FRAMEBUFFER, ctx->hemisphere.fb[0]);
 		ctx->hemisphere.fbHemiToLightmapLocation[ctx->hemisphere.fbHemiIndex] =
 			lm_i2(ctx->meshPosition.rasterizer.x, ctx->meshPosition.rasterizer.y);
 	}
@@ -875,7 +891,7 @@ static void lm_endSampleHemisphere(lm_context *ctx)
 	if (++ctx->meshPosition.hemisphere.side == 5)
 	{
 		// finish hemisphere
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glBindFramebuffer(GL_FRAMEBUFFER, ctx->frameBuffer);
 		if (++ctx->hemisphere.fbHemiIndex == ctx->hemisphere.fbHemiCountX * ctx->hemisphere.fbHemiCountY)
 		{
 			// downsample new hemisphere batch and store the results
@@ -1145,7 +1161,8 @@ static float lm_defaultWeights(float cos_theta, void *userdata)
 lm_context *lmCreate(int hemisphereSize, float zNear, float zFar,
 	float clearR, float clearG, float clearB,
 	int interpolationPasses, float interpolationThreshold,
-	float cameraToSurfaceDistanceModifier)
+	float cameraToSurfaceDistanceModifier,
+    uint32_t frameBuffer)
 {
 	assert(hemisphereSize == 512 || hemisphereSize == 256 || hemisphereSize == 128 ||
 		   hemisphereSize ==  64 || hemisphereSize ==  32 || hemisphereSize ==  16);
@@ -1208,7 +1225,7 @@ lm_context *lmCreate(int hemisphereSize, float zNear, float zFar,
 			return NULL;
 		}
 	}
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, ctx->frameBuffer);
 
 	// dummy vao for fullscreen quad rendering
 	glGenVertexArrays(1, &ctx->hemisphere.vao);
@@ -1334,7 +1351,7 @@ void lmDestroy(lm_context *ctx)
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 	glBindVertexArray(0);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, ctx->frameBuffer);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
